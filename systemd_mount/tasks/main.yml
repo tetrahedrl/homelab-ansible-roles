@@ -1,0 +1,34 @@
+---
+- name: Validate variables
+  ansible.builtin.assert:
+    that:
+      - systemd_mount__what is defined
+      - systemd_mount__what | length > 0
+      - systemd_mount__where is defined
+      - systemd_mount__where | length > 0
+      - systemd_mount__type is defined
+      - systemd_mount__type | length > 0
+    fail_msg: "systemd_mount__what, systemd_mount__where, and systemd_mount__type must be set and cannot be empty."
+    success_msg: "Required variables validated successfully."
+
+- name: Get escaped unit file name
+  ansible.builtin.command: "systemd-escape -p --suffix=mount \"{{ systemd_mount__where }}\""
+  register: systemd_mount__unit_file
+  changed_when: false
+
+- name: Deploy unit file
+  become: true
+  ansible.builtin.template:
+    src: templates/template.mount.j2
+    dest: "/etc/systemd/system/{{ systemd_mount__unit_file.stdout }}"
+    owner: root
+    group: root
+    mode: "644"
+
+- name: Ensure mount is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ systemd_mount__unit_file.stdout }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true

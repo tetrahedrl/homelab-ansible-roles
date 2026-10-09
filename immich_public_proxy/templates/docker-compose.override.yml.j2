@@ -1,0 +1,12 @@
+services:
+    immich-public-proxy:
+{% if immich_public_proxy__version is defined %}
+        image: alangrainger/immich-public-proxy:{{ immich_public_proxy__version }}
+{% endif %}
+        environment:
+            IMMICH_URL: {{ immich_public_proxy__immich_url }}
+            PUBLIC_BASE_URL: {{ immich_public_proxy__public_base_url }}
+{% if immich_public_proxy__config is defined %}
+            CONFIG: |
+                {{ immich_public_proxy__config | indent(16) }}
+{% endif %}

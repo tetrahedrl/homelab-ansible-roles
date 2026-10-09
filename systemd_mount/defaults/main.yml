@@ -1,0 +1,6 @@
+---
+systemd_mount__description: "Ansible-managed mount unit"
+systemd_mount__after: "network-online.target"
+systemd_mount__wants: "network-online.target"
+systemd_mount__options: "_netdev,rw,soft,nofail"
+systemd_mount__wanted_by: "multi-user.target"

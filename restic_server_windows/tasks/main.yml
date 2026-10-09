@@ -1,0 +1,48 @@
+---
+- name: Install necessary packages
+  chocolatey.chocolatey.win_chocolatey:
+    name:
+      - XAMPP
+    state: present
+
+- name: Check rest-server version
+  ansible.windows.win_powershell:
+    script: |
+      $version = '{{ restic_server_windows__version }}'
+      $installPath = [System.Environment]::ExpandEnvironmentVariables('{{ restic_server_windows__install_directory }}')
+      (& "$installPath/rest-server.exe" --version)[0].Contains($version)
+  register: restic_server_windows__version_match
+  ignore_errors: true
+  changed_when: false
+
+- name: Install rest-server
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $installPath = [System.Environment]::ExpandEnvironmentVariables('{{ restic_server_windows__install_directory }}')
+      $zipUrl = '{{ restic_server_windows__zip_url }}'
+      $zipName = '{{ restic_server_windows__zip_name }}'
+      $tempFile = New-TemporaryFile | Rename-Item -NewName { $_ -replace '\.tmp$', '.zip' } -PassThru
+      Invoke-WebRequest -Uri "$zipUrl" -OutFile $tempFile
+      Expand-Archive -Path "$tempFile" -DestinationPath "$installPath" -Force
+      Get-ChildItem "$installPath/$zipName" | Move-Item -Destination "$installPath" -Force
+      Remove-Item -Path "$installPath/$zipName" -Recurse -Force
+  when: >
+    (restic_server_windows__version_match is not defined)
+    or (restic_server_windows__version_match.output | length == 0)
+    or (not restic_server_windows__version_match.output[0])
+
+- name: Ensure data directory exists
+  ansible.windows.win_file:
+    path: "{{ restic_server_windows__backup_directory }}"
+    state: directory
+
+- name: Ensure .htpasswd file exists
+  ansible.windows.win_file:
+    path: "{{ restic_server_windows__backup_directory }}/.htpasswd"
+    state: touch
+
+- name: Create scheduled task
+  community.windows.win_scheduled_task:
+    actions:
+      - path: "{{ restic_server_windows__install_directory }}/rest-server.exe"

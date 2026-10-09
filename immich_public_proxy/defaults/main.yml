@@ -1,0 +1,6 @@
+---
+immich_public_proxy__install_path: "/home/immich/immich-public-proxy"
+immich_public_proxy__install_owner: "immich"
+immich_public_proxy__version: "3.2.1"
+immich_public_proxy__immich_url: "http://localhost:2283"
+immich_public_proxy__public_base_url: "!reset"

@@ -1,0 +1,218 @@
+# SPDX-License-Identifier: MIT-0
+---
+# tasks file for intel_igpu_sriov_host
+
+# Follows the steps available at
+# https://github.com/strongtz/i915-sriov-dkms/blob/master/docs/install-pve-host.md
+
+- name: Validate role inputs
+  ansible.builtin.assert:
+    that:
+      - intel_igpu_sriov_host__pve_node is defined
+      - intel_igpu_sriov_host__igpu_pci_vendor_id is defined
+      - intel_igpu_sriov_host__igpu_pci_device_id is defined
+      - intel_igpu_sriov_host__driver is defined
+      - intel_igpu_sriov_host__driver in ['xe', 'i915']
+      - intel_igpu_sriov_host__max_vfs is defined
+      - intel_igpu_sriov_host__dkms_url is defined
+
+- name: Ensure required packages are installed
+  become: true
+  ansible.builtin.apt:
+    name:
+      - dkms
+      - build-essential
+      - sysfsutils
+      - proxmox-default-kernel
+      - proxmox-default-headers
+    state: present
+
+- name: Check for i915/xe related parameters in /etc/default/grub # noqa: command-instead-of-module
+  ansible.builtin.command: grep -Eq '{{ item }}' /etc/default/grub
+  loop:
+    - "intel_iommu"
+    - "xe.max_vfs"
+    - "xe.force_probe"
+    - "module_blacklist=i915"
+    - "module_blacklist=xe"
+  register: intel_igpu_sriov_host__default_grub_match
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Assert i915/xe related parameters are not set in /etc/default/grub
+  ansible.builtin.assert:
+    that: >- # zero matches
+      intel_igpu_sriov_host__default_grub_match.results
+      | selectattr('rc', 'equalto', 0)
+      | list
+      | length
+      == 0
+    fail_msg: "i915/xe related kernel parameters are set in default grub config file (/etc/default/grub) instead of modular file, please remove manually!"
+
+- name: Set variable containing i915-related kernel parameters
+  when: intel_igpu_sriov_host__driver == 'i915'
+  ansible.builtin.set_fact:
+    intel_igpu_sriov_host__kernel_params:
+      - "intel_iommu=on"
+      - "i915.max_vfs={{ intel_igpu_sriov_host__max_vfs }}"
+      - "i915.enable_guc=3"
+      - "module_blacklist=xe"
+
+- name: Set variable containing xe-related kernel parameters
+  when: intel_igpu_sriov_host__driver == 'xe'
+  ansible.builtin.set_fact:
+    intel_igpu_sriov_host__kernel_params:
+      - "intel_iommu=on"
+      - "xe.max_vfs={{ intel_igpu_sriov_host__max_vfs }}"
+      - "xe.force_probe=0x{{ intel_igpu_sriov_host__igpu_pci_device_id }}"
+      - "module_blacklist=i915"
+
+- name: Ensure i915/xe kernel parameters are set in /etc/default/grub.d/intel_igpu_sriov_host.cfg
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/default/grub.d/intel_igpu_sriov_host.cfg
+    force: true
+    mode: "644"
+    owner: "root"
+    content: GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} {{ intel_igpu_sriov_host__kernel_params | join(' ') }}"
+
+- name: Check if i915/xe kernel parameters are already set for current boot # noqa: command-instead-of-module
+  ansible.builtin.command: grep -q '{{ item }}' /proc/cmdline
+  loop: "{{ intel_igpu_sriov_host__kernel_params | list }}"
+  register: intel_igpu_sriov_host__kernel_params_match
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check if number of VFs is set in /etc/sysfs.conf # noqa: command-instead-of-module
+  ansible.builtin.command: grep -q "devices/pci0000:00/0000:00:02.0/sriov_numvfs" /etc/sysfs.conf
+  register: intel_igpu_sriov_host__sysfs_conf_match
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Assert number of VFs is not set in /etc/sysfs.conf
+  ansible.builtin.assert:
+    that: intel_igpu_sriov_host__sysfs_conf_match.rc == 1
+    fail_msg: "Number of VFs is set in /etc/sysfs.conf instead of modular file, please remove manually!"
+
+- name: Ensure number of VFs is set in /etc/sysfs.d/intel_igpu_sriov_host.conf
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/sysfs.d/intel_igpu_sriov_host.conf
+    force: true
+    mode: "644"
+    owner: "root"
+    content: devices/pci0000:00/0000:00:02.0/sriov_numvfs = {{ intel_igpu_sriov_host__max_vfs }}
+  register: intel_igpu_sriov_host__sysfs_conf_module
+
+- name: Ensure i915-sriov-dkms module is installed
+  become: true
+  ansible.builtin.apt:
+    deb: "{{ intel_igpu_sriov_host__dkms_url }}"
+    state: present
+  register: intel_igpu_sriov_host__kernel_module
+
+- name: Ensure vfio module is set enabled
+  become: true
+  ansible.builtin.copy:
+    content: "vfio-pci"
+    dest: /etc/modules-load.d/vfio.conf
+    force: true
+    mode: "644"
+    owner: "root"
+  register: intel_igpu_sriov_host__vfio
+
+- name: Ensure VFs are set to be blocked on host
+  become: true
+  ansible.builtin.copy:
+    content: >
+      # Bind all i915 VFs (00:02.1 to 00:02.7) to vfio-pci
+
+      ACTION=="add",
+      SUBSYSTEM=="pci",
+      KERNEL=="0000:00:02.[1-7]",
+      ATTR{vendor}=="0x{{ intel_igpu_sriov_host__igpu_pci_vendor_id }}",
+      ATTR{device}=="0x{{ intel_igpu_sriov_host__igpu_pci_device_id }}",
+      DRIVER!="vfio-pci",
+      RUN+="/bin/sh -c 'echo \$kernel > /sys/bus/pci/devices/\$kernel/driver/unbind;
+      echo vfio-pci > /sys/bus/pci/devices/\$kernel/driver_override;
+      modprobe vfio-pci;
+      echo \$kernel > /sys/bus/pci/drivers/vfio-pci/bind'"
+    dest: /etc/udev/rules.d/99-i915-vf-vfio.rules
+    force: true
+    mode: "644"
+    owner: "root"
+  register: intel_igpu_sriov_host__vfio_udev
+
+- name: Set whether grub/initramfs update and reboot need to be performed
+  when: >
+    (
+      intel_igpu_sriov_host__kernel_params_match.results
+      | selectattr('rc', 'equalto', 0)
+      | list
+      | length
+      != (intel_igpu_sriov_host__kernel_params | length)
+    )
+    or (intel_igpu_sriov_host__kernel_module.changed | bool)
+    or (intel_igpu_sriov_host__sysfs_conf_module.changed | bool)
+    or (intel_igpu_sriov_host__vfio.changed | bool)
+    or (intel_igpu_sriov_host__vfio_udev.changed | bool)
+  ansible.builtin.set_fact:
+    intel_igpu_sriov_host__update_reboot_needed: true
+
+- name: Update grub
+  when: (intel_igpu_sriov_host__update_reboot_needed is defined) and intel_igpu_sriov_host__update_reboot_needed
+  become: true
+  ansible.builtin.command: update-grub
+  changed_when: true
+
+- name: Update initramfs
+  when: (intel_igpu_sriov_host__update_reboot_needed is defined) and intel_igpu_sriov_host__update_reboot_needed
+  become: true
+  ansible.builtin.command: update-initramfs -u
+  changed_when: true
+
+- name: Reboot if necessary
+  when: (intel_igpu_sriov_host__update_reboot_needed is defined) and intel_igpu_sriov_host__update_reboot_needed
+  ansible.builtin.reboot:
+
+- name: Get VF info from sysfs
+  ansible.builtin.shell: |
+    set -o pipefail
+    for dev in /sys/bus/pci/devices/*; do
+      if [ -L "$dev/physfn" ] && \
+         [ "$(cat "$dev/physfn/vendor")" = "0x{{ intel_igpu_sriov_host__igpu_pci_vendor_id }}" ] && \
+         [ "$(cat "$dev/physfn/device")" = "0x{{ intel_igpu_sriov_host__igpu_pci_device_id }}" ]; then
+        path=$(basename "$dev");
+        group=$(basename "$(readlink "$dev/iommu_group")");
+        subsystem_device=$(cat "$dev/subsystem_device" | sed 's/^0x//')
+        subsystem_vendor=$(cat "$dev/subsystem_vendor" | sed 's/^0x//')
+        echo "$path,$group,$subsystem_device,$subsystem_vendor"
+      fi
+    done
+  register: intel_igpu_sriov_host__vf_devices
+  check_mode: false
+  changed_when: false
+
+- name: Assert desired number of VFs exist
+  ansible.builtin.assert:
+    that: (intel_igpu_sriov_host__vf_devices.stdout_lines | length) == intel_igpu_sriov_host__max_vfs
+    fail_msg: VFs do not exist! Troubleshoot role!
+
+- name: Ensure VFs are mapped
+  ansible.builtin.blockinfile:
+    path: /etc/pve/mapping/pci.cfg
+    create: true
+    owner: root
+    group: www-data
+    mode: "u=rw,g=r"
+    marker: "# {mark} ANSIBLE MANAGED INTEL SRIOV"
+    block: |
+      {% for vf in intel_igpu_sriov_host__vf_devices.stdout_lines %}
+      {% set parts = vf.split(',') %}
+      igpu-vf-{{ loop.index }}
+              map id={{ intel_igpu_sriov_host__igpu_pci_vendor_id }}:{{ intel_igpu_sriov_host__igpu_pci_device_id }},iommugroup={{ parts[1] }},node={{ intel_igpu_sriov_host__pve_node }},path={{ parts[0] }},subsystem-id={{ parts[3] }}:{{ parts[2] }}
+
+      {% endfor %}

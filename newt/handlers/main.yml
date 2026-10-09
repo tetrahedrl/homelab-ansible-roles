@@ -1,0 +1,7 @@
+---
+- name: Restart newt service
+  ansible.builtin.systemd:
+    name: newt
+    state: restarted
+    daemon_reload: true
+  become: true

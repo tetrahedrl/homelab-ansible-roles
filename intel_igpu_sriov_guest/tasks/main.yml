@@ -1,0 +1,210 @@
+# SPDX-License-Identifier: MIT-0
+---
+# tasks file for intel-igpu-sriov-guest
+
+# Follows the steps available at
+# https://github.com/strongtz/i915-sriov-dkms/blob/master/docs/install-linux-guest.md
+
+- name: Validate role inputs
+  ansible.builtin.assert:
+    that:
+      - intel_igpu_sriov_guest__driver is defined
+      - intel_igpu_sriov_guest__driver in ['xe', 'i915']
+      - intel_igpu_sriov_guest__igpu_pci_device_id is defined
+      - intel_igpu_sriov_guest__dkms_url is defined
+      - intel_igpu_sriov_guest__install_compute_packages is defined
+      - intel_igpu_sriov_guest__install_media_packages is defined
+      - intel_igpu_sriov_guest__install_pytorch_packages is defined
+      - intel_igpu_sriov_guest__install_raytracing_packages is defined
+      - intel_igpu_sriov_guest__intel_graphics_ppa_fingerprint is defined
+      - intel_igpu_sriov_guest__intel_graphics_ppa_key_url is defined
+      - intel_igpu_sriov_guest__intel_graphics_ppa_url is defined
+
+- name: Check for i915/xe related parameters in /etc/default/grub # noqa: command-instead-of-module
+  ansible.builtin.command: grep -Eq '{{ item }}' /etc/default/grub
+  loop:
+    - "intel_iommu"
+    - "xe.force_probe"
+    - "module_blacklist=i915"
+    - "module_blacklist=xe"
+  register: intel_igpu_sriov_guest__default_grub_match
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Assert i915/xe related parameters are not set in /etc/default/grub
+  ansible.builtin.assert:
+    that: >- # zero matches
+      intel_igpu_sriov_guest__default_grub_match.results
+      | selectattr('rc', 'equalto', 0)
+      | list
+      | length
+      == 0
+    fail_msg: "i915/xe related kernel parameters are set in default grub config file (/etc/default/grub) instead of modular file, please remove manually!"
+
+- name: Set variable containing i915-related kernel parameters
+  when: intel_igpu_sriov_guest__driver == 'i915'
+  ansible.builtin.set_fact:
+    intel_igpu_sriov_guest__kernel_params:
+      - "intel_iommu=on"
+      - "i915.enable_guc=3"
+      - "module_blacklist=xe"
+
+- name: Set variable containing xe-related kernel parameters
+  when: intel_igpu_sriov_guest__driver == 'xe'
+  ansible.builtin.set_fact:
+    intel_igpu_sriov_guest__kernel_params:
+      - "intel_iommu=on"
+      - "xe.force_probe=0x{{ intel_igpu_sriov_guest__igpu_pci_device_id }}"
+      - "module_blacklist=i915"
+
+- name: Ensure i915/xe kernel parameters are set in /etc/default/grub.d/intel_igpu_sriov_guest.cfg
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/default/grub.d/intel_igpu_sriov_guest.cfg
+    force: true
+    mode: "644"
+    owner: "root"
+    content: GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} {{ intel_igpu_sriov_guest__kernel_params | join(' ') }}"
+
+- name: Check if i915/xe kernel parameters are already set for current boot # noqa: command-instead-of-module
+  ansible.builtin.command: grep -q '{{ item }}' /proc/cmdline
+  loop: "{{ intel_igpu_sriov_guest__kernel_params | list }}"
+  register: intel_igpu_sriov_guest__kernel_params_match
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Ensure dkms module requirements are installed
+  become: true
+  ansible.builtin.apt:
+    name:
+      - "linux-headers-{{ ansible_facts['kernel'] }}"
+      - build-essential
+      - dkms
+      - mokutil
+    state: present
+
+- name: Ensure i915-sriov-dkms module is installed
+  become: true
+  ansible.builtin.apt:
+    deb: "{{ intel_igpu_sriov_guest__dkms_url }}"
+    state: present
+  register: intel_igpu_sriov_guest__kernel_module
+
+#- name: Set variable with secure boot status
+#  ansible.builtin.command: mokutil --sb-state
+#  register: intel_igpu_sriov_guest__sb_state
+#  changed_when: false
+#  failed_when: false
+#  check_mode: false
+#
+#- name: Import MOK key if needed
+
+- name: Set whether grub/initramfs update and reboot need to be performed
+  when: >
+    (
+      intel_igpu_sriov_guest__kernel_params_match.results
+      | selectattr('rc', 'equalto', 0)
+      | list
+      | length
+      != (intel_igpu_sriov_guest__kernel_params | length)
+    )
+    or (intel_igpu_sriov_guest__kernel_module.changed | bool)
+  ansible.builtin.set_fact:
+    intel_igpu_sriov_guest__update_reboot_needed: true
+
+- name: Update grub
+  when: (intel_igpu_sriov_guest__update_reboot_needed is defined) and intel_igpu_sriov_guest__update_reboot_needed
+  become: true
+  ansible.builtin.command: update-grub
+  changed_when: true
+
+- name: Update initramfs
+  when: (intel_igpu_sriov_guest__update_reboot_needed is defined) and intel_igpu_sriov_guest__update_reboot_needed
+  become: true
+  ansible.builtin.command: update-initramfs -u
+  changed_when: true
+
+- name: Reboot if necessary
+  when: (intel_igpu_sriov_guest__update_reboot_needed is defined) and intel_igpu_sriov_guest__update_reboot_needed
+  become: true
+  ansible.builtin.reboot:
+
+# Follows the steps at https://dgpu-docs.intel.com/driver/client/overview.html
+
+# add_apt_repository is apparently deprecated, see here: https://github.com/ansible/ansible/issues/85281#issuecomment-2956756266
+# the tasks to add the ppa are adapted from chatgpt
+
+- name: Ensure PPA signing requirements installed
+  become: true
+  ansible.builtin.apt:
+    name:
+      - gpg
+    state: present
+
+- name: Ensure intel-graphics PPA key is downloaded
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ intel_igpu_sriov_guest__intel_graphics_ppa_key_url }}"
+    dest: /etc/apt/keyrings/intel-graphics.asc
+    mode: "0644"
+
+- name: Ensure intel-graphics PPA is added
+  become: true
+  ansible.builtin.deb822_repository:
+    name: intel-graphics
+    types: [deb]
+    uris: "{{ intel_igpu_sriov_guest__intel_graphics_ppa_url }}"
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: [main]
+    signed_by: /etc/apt/keyrings/intel-graphics.asc
+    install_python_debian: true
+  notify: "Update apt cache"
+
+- name: Flush handlers now
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure compute-related packages are installed
+  when: intel_igpu_sriov_guest__install_compute_packages
+  become: true
+  ansible.builtin.apt:
+    name:
+      - libze-intel-gpu1
+      - libze1
+      - intel-metrics-discovery
+      - intel-opencl-icd
+      - clinfo
+      - intel-gsc
+    state: present
+
+- name: Ensure media-related packages are installed
+  when: intel_igpu_sriov_guest__install_media_packages
+  become: true
+  ansible.builtin.apt:
+    name:
+      - intel-media-va-driver-non-free
+      - libmfx-gen1
+      - libvpl2
+      - libvpl-tools
+      - libva-glx2
+      - va-driver-all
+      - vainfo
+    state: present
+
+- name: Ensure required packages for PyTorch are installed
+  when: intel_igpu_sriov_guest__install_pytorch_packages
+  become: true
+  ansible.builtin.apt:
+    name:
+      - libze-dev
+      - intel-ocloc
+    state: present
+
+- name: Ensure required packages for hardware ray tracing are installed
+  when: intel_igpu_sriov_guest__install_raytracing_packages
+  become: true
+  ansible.builtin.apt:
+    name:
+      - libze-intel-gpu-raytracing
+    state: present

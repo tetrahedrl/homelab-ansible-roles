@@ -1,0 +1,19 @@
+[Unit]
+Description=Pangolin CLI
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/pangolin/pangolin.env
+ExecStart=/usr/local/bin/pangolin up --attach --id "$CLIENT_ID" --secret "$CLIENT_SECRET" --endpoint "$PANGOLIN_ENDPOINT"
+Restart=always
+RestartSec=2
+UMask=0077
+
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

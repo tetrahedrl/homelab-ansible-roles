@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT-0
+---
+# handlers file for intel-igpu-sriov-guest
+
+- name: Update apt cache
+  become: true
+  ansible.builtin.apt:
+    update_cache: true

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Test intel_igpu_sriov_guest
+  hosts: localhost
+  remote_user: root
+  roles:
+    - intel_igpu_sriov_guest

@@ -1,0 +1,3 @@
+---
+newt__newt_version: "1.17.0"
+newt__newt_binary_url: "https://github.com/fosrl/newt/releases/download/{{ newt__newt_version }}/newt_linux_amd64"

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT-0
+---
+# defaults file for intel-igpu-sriov-guest
+
+intel_igpu_sriov_guest__igpu_pci_device_id: 9a49 # on host, cat /sys/devices/pci0000:00/0000:00:02.0/device
+intel_igpu_sriov_guest__driver: xe # can use "xe" or "i915"
+intel_igpu_sriov_guest__dkms_release: 2026.05.06
+intel_igpu_sriov_guest__dkms_url: https://github.com/strongtz/i915-sriov-dkms/releases/download/{{ intel_igpu_sriov_guest__dkms_release }}/i915-sriov-dkms_{{
+  intel_igpu_sriov_guest__dkms_release }}_amd64.deb # noqa: yaml[line-length]
+intel_igpu_sriov_guest__install_compute_packages: true
+intel_igpu_sriov_guest__install_media_packages: true
+intel_igpu_sriov_guest__install_pytorch_packages: false
+intel_igpu_sriov_guest__install_raytracing_packages: false
+intel_igpu_sriov_guest__intel_graphics_ppa_fingerprint: "0x0C0E6AF955CE463C03FC51574D098D70AFBE5E1F"
+intel_igpu_sriov_guest__intel_graphics_ppa_key_url: https://keyserver.ubuntu.com/pks/lookup?fingerprint=on&op=get&search={{
+  intel_igpu_sriov_guest__intel_graphics_ppa_fingerprint }} # noqa: yaml[line-length]
+intel_igpu_sriov_guest__intel_graphics_ppa_url: https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu # noqa: yaml[line-length]

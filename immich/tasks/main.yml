@@ -1,0 +1,53 @@
+---
+- name: Ensure immich database password is provided
+  ansible.builtin.assert:
+    that:
+      - immich__db_password is defined
+      - immich__db_password | length > 0
+    fail_msg: "immich__db_password must be set and cannot be empty."
+    success_msg: "Required variables validated successfully."
+
+- name: Ensure immich install directory exists
+  ansible.builtin.file:
+    name: "{{ immich__install_path }}"
+    state: directory
+    owner: "{{ immich__install_owner }}"
+    group: "{{ immich__install_owner }}"
+    mode: "755"
+
+- name: Ensure docker compose files are downloaded
+  ansible.builtin.get_url:
+    url: "{{ immich__release_url }}/{{ item }}"
+    dest: "{{ immich__install_path }}/{{ item }}"
+    owner: "{{ immich__install_owner }}"
+    group: "{{ immich__install_owner }}"
+    mode: "644"
+    force: true
+  notify: Pull and recreate immich
+  loop:
+    - docker-compose.yml
+    - hwaccel.ml.yml
+    - hwaccel.transcoding.yml
+
+- name: Deploy .env file from template
+  ansible.builtin.template:
+    src: templates/.env.j2
+    dest: "{{ immich__install_path }}/.env"
+    owner: "{{ immich__install_owner }}"
+    group: "{{ immich__install_owner }}"
+    mode: "600"
+  notify: Pull and recreate immich
+
+- name: Deploy docker-compose.override.yml from template
+  ansible.builtin.template:
+    src: templates/docker-compose.override.yml.j2
+    dest: "{{ immich__install_path }}/docker-compose.override.yml"
+    owner: "{{ immich__install_owner }}"
+    group: "{{ immich__install_owner }}"
+    mode: "644"
+  notify: Pull and recreate immich
+
+- name: Ensure immich is running
+  community.docker.docker_compose_v2: # TODO: handle onscreen prompts?
+    project_src: "{{ immich__install_path }}"
+    state: present

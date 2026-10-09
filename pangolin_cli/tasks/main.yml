@@ -1,0 +1,58 @@
+---
+- name: Validate variables
+  ansible.builtin.assert:
+    that:
+      - pangolin_cli__client_id is defined
+      - pangolin_cli__client_id | length > 0
+      - pangolin_cli__client_secret is defined
+      - pangolin_cli__client_secret | length > 0
+      - pangolin_cli__pangolin_endpoint is defined
+      - pangolin_cli__pangolin_endpoint | length > 0
+    fail_msg: "pangolin_cli__client_id, pangolin_cli__client_secret, and pangolin_cli__pangolin_endpoint must be set and cannot be empty."
+    success_msg: "Required variables validated successfully."
+
+- name: Download pangolin cli binary
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ pangolin_cli__cli_binary_url }}"
+    dest: /usr/local/bin/pangolin
+    owner: root
+    group: root
+    mode: "0744"
+    force: true
+  notify: Restart pangolin service
+
+- name: Ensure pangolin conf directory exists
+  become: true
+  ansible.builtin.file:
+    name: /etc/pangolin
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy environment file from template
+  become: true
+  ansible.builtin.template:
+    src: templates/pangolin.env.j2
+    dest: /etc/pangolin/pangolin.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart pangolin service
+
+- name: Deploy service file
+  become: true
+  ansible.builtin.copy:
+    src: templates/pangolin.service
+    dest: /etc/systemd/system/pangolin.service
+    owner: root
+    group: root
+    mode: "644"
+  notify: Restart pangolin service
+
+- name: Ensure pangolin is enabled and running
+  ansible.builtin.systemd:
+    name: pangolin
+    enabled: true
+    state: started

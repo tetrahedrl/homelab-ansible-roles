@@ -1,0 +1,4 @@
+---
+newt_windows__newt_version: "1.16.0"
+newt_windows__newt_installer_url: "https://github.com/fosrl/newt/releases/download/{{ newt_windows__newt_version }}/newt_windows_installer.exe"
+newt_windows__config: {}

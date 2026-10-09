@@ -1,0 +1,13 @@
+[Unit]
+Description={{ systemd_mount__description }}
+After={{ systemd_mount__after }}
+Wants={{ systemd_mount__wants }}
+
+[Mount]
+What={{ systemd_mount__what }}
+Where={{ systemd_mount__where }}
+Type={{ systemd_mount__type }}
+Options={{ systemd_mount__options }}
+
+[Install]
+WantedBy={{ systemd_mount__wanted_by }}

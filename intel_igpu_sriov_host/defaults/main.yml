@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MIT-0
+---
+# defaults file for intel_igpu_sriov_host
+
+intel_igpu_sriov_host__pve_node: pve
+intel_igpu_sriov_host__igpu_pci_vendor_id: "8086"
+intel_igpu_sriov_host__igpu_pci_device_id: "9a49" # cat /sys/devices/pci0000:00/0000:00:02.0/device
+intel_igpu_sriov_host__max_vfs: 7
+intel_igpu_sriov_host__driver: xe # can use "xe" or "i915"
+intel_igpu_sriov_host__dkms_release: 2026.05.06
+intel_igpu_sriov_host__dkms_url: https://github.com/strongtz/i915-sriov-dkms/releases/download/{{ intel_igpu_sriov_host__dkms_release }}/i915-sriov-dkms_{{
+  intel_igpu_sriov_host__dkms_release }}_amd64.deb # noqa: yaml[line-length]

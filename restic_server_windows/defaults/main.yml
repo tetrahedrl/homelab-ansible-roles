@@ -1,0 +1,7 @@
+---
+restic_server_windows__install_directory: "%LOCALAPPDATA%/restic/rest-server"
+restic_server_windows__backup_directory: "%LOCALAPPDATA%/restic/data"
+restic_server_windows__version: 0.14.0
+restic_server_windows__zip_url: "https://github.com/restic/rest-server/releases/download/v{{ restic_server_windows__version }}/rest-server_{{ restic_server_windows__version }}_windows_amd64.zip"
+restic_server_windows__zip_name: "rest-server_{{ restic_server_windows__version }}_windows_amd64"
+restic_server_windows__htpasswd_bin_name: "C:/xampp/apache/bin/htpasswd"

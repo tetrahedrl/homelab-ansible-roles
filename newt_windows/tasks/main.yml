@@ -1,0 +1,78 @@
+---
+- name: Validate variables
+  ansible.builtin.assert:
+    that:
+      - newt_windows__newt_id is defined
+      - newt_windows__newt_id | length > 0
+      - newt_windows__newt_secret is defined
+      - newt_windows__newt_secret | length > 0
+      - newt_windows__pangolin_endpoint is defined
+      - newt_windows__pangolin_endpoint | length > 0
+    fail_msg: "newt_windows__newt_id, newt_windows__newt_secret, and newt_windows__pangolin_endpoint must be set and cannot be empty."
+    success_msg: "Required variables validated successfully."
+
+- name: Check version of installed newt
+  ansible.windows.win_powershell:
+    script: |
+      ((newt --version) -split "Newt version ",2)[1]
+  register: newt_windows__existing_newt_version
+  ignore_errors: true
+  changed_when: false
+
+- name: Ensure newt is installed through win_package
+  ansible.windows.win_package:
+    path: "{{ newt_windows__newt_installer_url }}"
+    state: present
+    arguments: /VERYSILENT
+  when: >
+    (newt_windows__existing_newt_version is not defined)
+    or (newt_windows__existing_newt_version.output | length == 0)
+    or (newt_windows__existing_newt_version.output[0] != newt_windows__newt_version)
+
+- name: Ensure newt Program Data directory exists
+  ansible.windows.win_file:
+    name: "%PROGRAMDATA%/newt/newt-client"
+    state: directory
+
+- name: Ensure newt config file is written
+  ansible.windows.win_copy:
+    dest: "%PROGRAMDATA%/newt/newt-client/config.json"
+    content: >-
+      {{
+        newt_windows__config
+        | combine(dict(
+            id=newt_windows__newt_id,
+            secret=newt_windows__newt_secret,
+            endpoint=newt_windows__pangolin_endpoint
+          ))
+        | to_json
+      }}
+  register: newt_windows__config_out
+
+- name: Check if newt service exists
+  ansible.windows.win_service_info:
+    name: NewtWireguardService
+  register: newt_windows__service_info
+
+- name: Install newt service
+  ansible.windows.win_powershell:
+    script: |
+      & "$env:ProgramFiles\newt\newt.exe" "install"
+  when: not newt_windows__service_info.exists
+
+- name: Ensure newt service is set to automatic startup and started
+  ansible.windows.win_service:
+    name: NewtWireguardService
+    start_mode: delayed
+    state: started
+
+- name: Restart newt if necessary
+  ansible.windows.win_service:
+    name: NewtWireguardService
+    state: restarted
+  when: >
+    newt_windows__config_out.changed
+    or (
+      newt_windows__existing_newt_version is defined
+      and newt_windows__existing_newt_version.output[0] != newt_windows__newt_version
+    )

@@ -1,0 +1,31 @@
+{% if immich__hwaccel_transcoding_service != "cpu" or immich__hwaccel_ml_service != "cpu" or (immich__external_library_volumes | length > 0) %}
+services:
+{% if immich__hwaccel_transcoding_service != "cpu" or (immich__external_library_volumes | length > 0) %}
+  immich-server:
+{% if immich__hwaccel_transcoding_service != "cpu" %}
+    extends:
+      file: hwaccel.transcoding.yml
+      service: {{ immich__hwaccel_transcoding_service }} # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
+{% endif %}
+{% if immich__external_library_volumes | length > 0 %}
+    volumes:
+      {{ immich__external_library_volumes | to_nice_yaml }}
+{% endif %}
+{% endif %}
+{% if immich__hwaccel_ml_service != "cpu" %}
+  immich-machine-learning:
+    # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
+    # Example tag: ${IMMICH_VERSION:-release}-cuda
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}-{{ immich__hwaccel_ml_service }}    
+    extends: # uncomment this section for hardware acceleration - see https://docs.immich.app/features/ml-hardware-acceleration
+      file: hwaccel.ml.yml
+      service: {{ immich__hwaccel_ml_service }} # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
+{% endif %}
+{% endif %}
+
+{% if immich__volumes %}
+volumes:
+{% for volume_configuration in immich__volumes %}
+  {{ volume_configuration | to_nice_yaml }}
+{% endfor %}
+{% endif %}

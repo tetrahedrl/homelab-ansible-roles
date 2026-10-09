@@ -1,0 +1,59 @@
+---
+- name: Validate variables
+  ansible.builtin.assert:
+    that:
+      - newt__newt_id is defined
+      - newt__newt_id | length > 0
+      - newt__newt_secret is defined
+      - newt__newt_secret | length > 0
+      - newt__pangolin_endpoint is defined
+      - newt__pangolin_endpoint | length > 0
+    fail_msg: "newt__newt_id, newt__newt_secret, and newt__pangolin_endpoint must be set and cannot be empty."
+    success_msg: "Required variables validated successfully."
+
+- name: Download newt binary
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ newt__newt_binary_url }}"
+    dest: /usr/local/bin/newt
+    owner: root
+    group: root
+    mode: "0744"
+    force: true
+  notify: Restart newt service
+
+- name: Ensure newt conf directory exists
+  become: true
+  ansible.builtin.file:
+    name: /etc/newt
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy environment file from template
+  become: true
+  ansible.builtin.template:
+    src: templates/newt.env.j2
+    dest: /etc/newt/newt.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart newt service
+
+- name: Deploy service file
+  become: true
+  ansible.builtin.copy:
+    src: templates/newt.service
+    dest: /etc/systemd/system/newt.service
+    owner: root
+    group: root
+    mode: "644"
+  notify: Restart newt service
+
+- name: Ensure newt is enabled and running
+  ansible.builtin.systemd:
+    name: newt
+    enabled: true
+    state: started
+  become: true

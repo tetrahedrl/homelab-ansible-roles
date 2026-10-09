@@ -1,0 +1,3 @@
+---
+pangolin_cli__cli_version: "0.16.0"
+pangolin_cli__cli_binary_url: "https://github.com/fosrl/cli/releases/download/{{ pangolin_cli__cli_version }}/pangolin-cli_linux_amd64"

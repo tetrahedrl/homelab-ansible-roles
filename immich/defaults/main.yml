@@ -1,0 +1,12 @@
+---
+immich__upload_location: "./library"
+immich__db_data_location: "./postgres"
+immich__tz: "Etc/UTC"
+immich__version: "v3.0.0"
+immich__install_path: "/home/immich/immich-app"
+immich__install_owner: "immich"
+immich__hwaccel_transcoding_service: "cpu"
+immich__hwaccel_ml_service: "cpu"
+immich__volumes: []
+immich__external_library_volumes: []
+immich__release_url: "https://github.com/immich-app/immich/releases/download/{{ immich__version }}"
